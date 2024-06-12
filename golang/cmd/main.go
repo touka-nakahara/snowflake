@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/bits"
+	"sync"
 	"time"
 )
 
@@ -18,20 +19,28 @@ const (
 
 	MoveTimeStampLength = MachineIDLength + SequenceLength
 	MoveMachineIDLength = SequenceLength
+
+	MaxSequence = SequenceMask
 )
 
 type Snowflake struct {
 	MachineID uint16 // 10bit
-	Sequence  uint16 // 12bit
 	EpochTime time.Time
+	Sequence  Sequence // 12bit
 }
 
 type SID struct {
-	ID               uint64 
+	ID               uint64
 	MachineID        uint16
 	Sequence         uint16
 	Timestamp        uint64
 	GenericTimeStamp time.Time
+}
+
+type Sequence struct {
+	Count uint16
+	Time  uint64
+	sync.Mutex
 }
 
 func NewSnowflake() *Snowflake {
@@ -54,22 +63,22 @@ func NewSnowflake() *Snowflake {
 
 	return &Snowflake{
 		MachineID: uint16(machineID),
-		Sequence:  0,
 		EpochTime: epochTime,
 	}
 }
 
-func (s *Snowflake) GetTimestamp() int64 {
+func (s *Snowflake) GetTimestamp() uint64 {
 	ct := time.Now().UTC()
 	fmt.Println(ct)
 	d := ct.Sub(s.EpochTime).Milliseconds()
-	return d
+	return uint64(d)
 }
 
 func (s *Snowflake) ID() uint64 {
 	timestamp := s.GetTimestamp()
+	sequence := s.Sequence.GetSequenceValue(timestamp)
 
-	id := (uint64(timestamp) << uint64(MoveTimeStampLength)) | (uint64(s.MachineID) << uint64(MoveMachineIDLength)) | uint64(s.Sequence)
+	id := (uint64(timestamp) << uint64(MoveTimeStampLength)) | (uint64(s.MachineID) << uint64(MoveMachineIDLength)) | uint64(sequence)
 
 	return id
 }
@@ -83,6 +92,25 @@ func (s *Snowflake) ParseID(id uint64) *SID {
 	return sid
 }
 
+func (s *Sequence) GetSequenceValue(currentTime uint64) uint16 {
+	s.Mutex.Lock()
+	defer s.Mutex.Unlock()
+
+	// Millisecondがお大きいなら初期化して返す
+	if currentTime > s.Time {
+		s.Time = currentTime
+		s.Count = 0
+		return s.Count
+	}
+
+	// Millisecondが同じならカウントアップして返す
+	if currentTime == s.Time {
+		return MaxSequence & (s.Count + 1)
+	}
+
+	return s.Count
+}
+
 func main() {
 
 	sf := NewSnowflake()
@@ -94,4 +122,3 @@ func main() {
 	fmt.Println(p.Timestamp)
 	fmt.Println(p.GenericTimeStamp)
 }
-
