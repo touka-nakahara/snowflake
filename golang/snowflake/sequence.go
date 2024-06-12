@@ -1,6 +1,8 @@
 package snowflake
 
-import "sync"
+import (
+	"sync"
+)
 
 type Sequence struct {
 	Count uint16
@@ -9,6 +11,7 @@ type Sequence struct {
 }
 
 func (s *Sequence) GetSequenceValue(currentTime uint64) uint16 {
+	//MaxSequenceはエラーとして使ってる
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
 
@@ -21,8 +24,13 @@ func (s *Sequence) GetSequenceValue(currentTime uint64) uint16 {
 
 	// Millisecondが同じならカウントアップして返す
 	if currentTime == s.Time {
-		return MaxSequence & (s.Count + 1)
+		s.Count++
+		seq := MaxSequence & s.Count
+		if seq >= MaxSequence {
+			return MaxSequence
+		}
+		return seq
 	}
 
-	return s.Count
+	return MaxSequence
 }
